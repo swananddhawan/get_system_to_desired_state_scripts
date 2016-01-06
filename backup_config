@@ -1,0 +1,8 @@
+[default_config_values]
+
+backup_path=/home/swanand/system_desired_state_backup
+
+backup_globally_installed_packages=yes
+backup_locally_installed_packages=yes
+
+number_of_retries_to_do_backup_steps_if_failed=2
