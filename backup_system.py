@@ -59,16 +59,6 @@ def are_config_values_correct (config_parser, path_to_file_containing_paths_to_b
         boolean_backup_globally_installed_packages = config_parser.getboolean ('default_config_values', 'backup_globally_installed_packages')
         boolean_value = boolean_backup_globally_installed_packages and config_parser.getboolean ('default_config_values', 'backup_locally_installed_packages')
         
-
-        # if backup globally installed packages, the system must be connected to internet
-        if (boolean_backup_globally_installed_packages):
-            log_info_to_file ("Checking internet connectivity ..")
-            return_value = subprocess.call ("wget google.co.in --timeout=20 --tries=3 > /dev/null 2> /dev/null", shell = True)
-            if (return_value != 0):
-                log_info_to_file ("No internet connectivity !!")
-            else:
-                log_info_to_file ("Internet connectivity: OK")
-
         # if the number of retries should be non-negative
         if (config_parser.getint ('default_config_values', 'number_of_retries_to_do_backup_steps_if_failed') < 0):
             incorrect_config_flag = False
@@ -116,7 +106,64 @@ def are_config_values_correct (config_parser, path_to_file_containing_paths_to_b
 def get_command_to_make_tar (backup_path, path):
     dest = os.path.join (backup_path, os.path.basename(path))
     return "tar -PcJf "+ dest + ".xz " + path
- 
+
+def get_input_from_user_for_continuation ():
+    log_info_to_file ("\n\n********************\n")
+    log_info_to_file ("There is a situation here. You have selected to backup globally installed packages, and it requires internet connection.")
+    log_info_to_file ("This machine is not connected to the internet. So select one of the options from below (0/1/2) to continue.")
+    log_info_to_file ("`0`: Continue anyway. (default)")
+    log_info_to_file ("`1`: Do not backup globally installed packages and continue with the rest.")
+    log_info_to_file ("`2`: Abort the program.")
+    
+    # Note : I know that I am hard coding the below value!!
+    n_attempts = 3
+    switch = ''
+    while (n_attempts):
+        switch = raw_input ("Your input: ")
+        if (switch == '0' or switch == '' or switch == '1' or switch == '2'):
+            break
+        else:
+            n_attempts -= 1
+            log_info_to_file ("Invalid input! Please provide a valid input.")
+            log_info_to_file ("Number of tries left: "), n_attempts
+
+    if not n_attempts:
+        log_info_to_file ("Number of attempts exhausted.")
+        log_info_to_file ("Continuing with the default option: 0")
+        switch = '0'
+   
+    if (switch == ''):
+        switch = '0'
+
+    log_info_to_file ("Choice selected: "+ switch)
+    return switch
+
+def get_l_tasks_and_task_number_for_globally_installed_packages (l_tasks,
+                                                                 task_number,
+                                                                 backup_path,
+                                                                 try_number,
+                                                                 status):
+    dpkg_get_selections_dest = os.path.join (backup_path, "dpkg_get_selections")
+    get_dpkg_selections = "dpkg --get-selections > " + dpkg_get_selections_dest
+    copy_tar_files = "cp /var/cache/apt/archives/*.deb " + backup_path
+    generate_urls = "grep -v deinstall " + dpkg_get_selections_dest + " | sed -e \"s/\s\+\(.*\)//g\" | xargs apt-get install --reinstall --print-uris --yes | grep -oP \"\047.*\047\" | sed \"s/'//g\" > urls_of_dpkg_get_selections"
+    download_packages = "wget -c --no-clobber --input-file=urls_of_dpkg_get_selections -o wget_log"
+
+    l_tasks.append(task (task_number, get_dpkg_selections, try_number, status))
+    task_number += 1
+
+    l_tasks.append(task (task_number, copy_tar_files, try_number, status))
+    task_number += 1
+    
+    l_tasks.append(task (task_number, generate_urls, try_number, status))
+    task_number += 1
+
+    l_tasks.append(task (task_number, download_packages, try_number, status))
+    task_number += 1
+
+    return l_tasks, task_number
+
+
 def generate_lists_of_tasks (config_parser, path_to_file_containing_paths_to_backup):
 
     l_tasks = []
@@ -126,24 +173,37 @@ def generate_lists_of_tasks (config_parser, path_to_file_containing_paths_to_bac
     backup_path = config_parser.get ('default_config_values', 'backup_path')
 
     if (config_parser.getboolean ('default_config_values', 'backup_globally_installed_packages')):
-        dpkg_get_selections_dest = os.path.join (backup_path, "dpkg_get_selections")
-        get_dpkg_selections = "dpkg --get-selections > " + dpkg_get_selections_dest
-        copy_tar_files = "cp /var/cache/apt/archives/*.deb " + backup_path
-        generate_urls = "grep -v deinstall " + dpkg_get_selections_dest + " | sed -e \"s/\s\+\(.*\)//g\" | xargs apt-get install --reinstall --print-uris --yes | grep -oP \"\047.*\047\" | sed \"s/'//g\" > urls_of_dpkg_get_selections"
-        download_packages = "wget -c --no-clobber --input-file=urls_of_dpkg_get_selections -o wget_log"
 
-        l_tasks.append(task (task_number, get_dpkg_selections, try_number, status))
-        task_number += 1
-
-        l_tasks.append(task (task_number, copy_tar_files, try_number, status))
-        task_number += 1
+        # if backup globally installed packages, the system must be connected to internet
+        log_info_to_file ("Checking internet connectivity ..")
         
-        l_tasks.append(task (task_number, generate_urls, try_number, status))
-        task_number += 1
+        return_value = subprocess.call ("wget google.co.in --timeout=20 --tries=3 > /dev/null 2> /dev/null", shell = True)
+        
+        if (return_value != 0):
+            log_info_to_file ("No internet connectivity !!")
+            choice = get_input_from_user_for_continuation ()
+            if (choice == '0'):
+                l_tasks, task_number = get_l_tasks_and_task_number_for_globally_installed_packages (l_tasks,
+                                                                                                    task_number,
+                                                                                                    backup_path,
+                                                                                                    try_number,
+                                                                                                    status)
 
-        l_tasks.append(task (task_number, download_packages, try_number, status))
-        task_number += 1
+            elif (choice == '1'):
+                log_info_to_file ("Skipping globally installed packages and continuing with the rest.")
+                pass
+                
+            else:
+                log_info_to_file ("Aborting ....")
+                sys.exit (1)
 
+        else:
+            log_info_to_file ("Internet connectivity: OK")
+            l_tasks, task_number = get_l_tasks_and_task_number_for_globally_installed_packages (l_tasks,
+                                                                                                task_number,
+                                                                                                backup_path,
+                                                                                                try_number,
+                                                                                                status)
 
     if (config_parser.getboolean ('default_config_values', 'backup_locally_installed_packages')):
         l_locally_installed_packages = subprocess.check_output ("echo -n $PATH | tr ':' '\n' | sort | uniq | grep $HOME | sed 's/\/install\/bin//g'", shell=True).split('\n')
