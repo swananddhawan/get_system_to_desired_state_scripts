@@ -1,0 +1,9 @@
+[default_config_values]
+
+# where all the backup files are kept
+backup_path=/home/swanand/system_desired_state_backup
+
+restore_globally_installed_packages=no
+restore_locally_installed_packages=no
+
+number_of_retries_to_do_restore_steps_if_failed=2
