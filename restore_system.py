@@ -152,6 +152,11 @@ def get_l_tasks_and_task_number_to_restore_globally_installed_packages (l_tasks,
 
     dselect_upgrade = "sudo apt-get dselect-upgrade -y"
 
+    current_dpkg_selections_backup_file_name = datetime.now().strftime('dpkg_selections.backup.%d-%m-%Y__%H-%M-%S')
+    backup_current_dpkg_selections = "dpkg --get-selections > " + current_dpkg_selections_backup_file_name
+    l_tasks.append(task (task_number, backup_current_dpkg_selections, try_number, status))
+    task_number += 1
+
     l_tasks.append(task (task_number, remove_stale_packages, try_number, status))
     task_number += 1
 
