@@ -89,7 +89,7 @@ def are_config_values_correct (config_parser, path_to_file_containing_paths_to_b
                     log_main.critical (path_to_file_containing_paths_to_backup + ": Provide absolute path for \"" + path + "\".")
 
                 # check for recusive paths if exists
-                if (is_cycle_present (path, os.path.abspath (path_to_file_containing_paths_to_backup))):
+                if (is_cycle_present (path, backup_path)):
                     incorrect_config_flag = False
                     log_main.critical (path_to_file_containing_paths_to_backup + ": Cannot copy  \"" + path + "\" into itself.")
 
@@ -103,7 +103,7 @@ def are_config_values_correct (config_parser, path_to_file_containing_paths_to_b
 
 def get_command_to_make_tar (backup_path, path):
     dest = os.path.join (backup_path, os.path.basename(path))
-    return "tar -Pcpzf " + dest + ".tar.gz " + path
+    return "tar -Pcpzfu " + dest + ".tar.gz " + path
 
 def get_input_from_user_for_continuation ():
     log_info_to_file ("\n\n********************\n")
@@ -147,7 +147,9 @@ def get_l_tasks_and_task_number_to_backup_globally_installed_packages (l_tasks,
     get_dpkg_selections = "dpkg --get-selections > " + dpkg_get_selections_dest
     copy_tar_files = "cp /var/cache/apt/archives/*.deb " + backup_path
     generate_urls = "grep -v deinstall " + dpkg_get_selections_dest + " | sed -e \"s/\s\+\(.*\)//g\" | xargs apt-get install --reinstall --print-uris --yes | grep -oP \"\047.*\047\" | sed \"s/'//g\" > urls_of_dpkg_get_selections"
-    download_packages = "wget -c --no-clobber --input-file=urls_of_dpkg_get_selections -o wget_log"
+    display_message_of_downloading_packages = "echo \'Downloading package .. Please maintain your patience as the data to download may be huge ..!!\'"
+    
+    download_packages = "wget -c --no-clobber --input-file=urls_of_dpkg_get_selections -o wget.log --directory-prefix=" + backup_path 
 
     l_tasks.append(task (task_number, get_dpkg_selections, try_number, status))
     task_number += 1
@@ -156,6 +158,9 @@ def get_l_tasks_and_task_number_to_backup_globally_installed_packages (l_tasks,
     task_number += 1
     
     l_tasks.append(task (task_number, generate_urls, try_number, status))
+    task_number += 1
+
+    l_tasks.append(task (task_number, display_message_of_downloading_packages, try_number, status))
     task_number += 1
 
     l_tasks.append(task (task_number, download_packages, try_number, status))
@@ -171,6 +176,7 @@ def generate_lists_of_tasks (config_parser, path_to_file_containing_paths_to_bac
     try_number = 0
     status = "undone"
     backup_path = config_parser.get ('default_config_values', 'backup_path')
+    backup_path = backup_path.replace (' ', '\\ ')
 
     if (config_parser.getboolean ('default_config_values', 'backup_globally_installed_packages')):
 
@@ -335,13 +341,15 @@ def execute_list_of_tasks (l_tasks, current_queue_head, config_parser):
     queue_head_position = int (current_queue_head.queue_head_position)
     state_of_queue_head = current_queue_head.state_of_queue_head
     
-    max_number_of_retries_to_backup = config_parser.get ('default_config_values',
-                                                         'number_of_retries_to_do_backup_steps_if_failed')
+    max_number_of_retries_to_backup = config_parser.getint ('default_config_values',
+                                                            'number_of_retries_to_do_backup_steps_if_failed')
 
     if (state_of_queue_head == "after"):
         queue_head_position += 1
     
-    for i in range (queue_head_position, len(l_tasks)):
+    len_l_tasks = len(l_tasks)
+    i = queue_head_position
+    while (i < len_l_tasks)
         current_task = l_tasks[i]
         task_try_number = l_tasks[i].try_number
         task_status = l_tasks[i].status
@@ -352,9 +360,11 @@ def execute_list_of_tasks (l_tasks, current_queue_head, config_parser):
             current_queue_head = current_queue_head._replace (state_of_queue_head = "after",
                                                               queue_head_position =  str(i-1))
             log_current_queue_head_to_file (current_queue_head)
+            i += 1
             continue
         
         elif ((task_status == "failed") and (task_try_number < (max_number_of_retries_to_backup + 1))):
+            log_info_to_file ("Retry number: " + str (task_try_number) + "Task: " + l_tasks[i].command)
             current_task = execute_task (current_queue_head, l_tasks[i], i, task_try_number)
 
         # number of retries are exceeded
@@ -368,6 +378,9 @@ def execute_list_of_tasks (l_tasks, current_queue_head, config_parser):
 
         l_tasks.append (current_task)
         log_task_to_file (current_task)
+
+        i += 1
+        len_l_tasks = len (l_tasks)
 
 
 
@@ -428,8 +441,7 @@ def try_forcefully_running_the_script ():
         
         # failed or cancelled tasks found..
         failed_or_cancelled_tasks = True
-        log_info_to_file ("Found tasks to retry ..!!")
-        current_task = execute_task (current_queue_head, current_task, i)
+        current_task = execute_task (current_queue_head, current_task, i, int (current_task.try_number))
 
         l_tasks.append (current_task)
         log_task_to_file (current_task)
@@ -483,20 +495,20 @@ def main():
         current_queue_head = queue_head ("before", "0")
         l_tasks_read_from_file = []
 
-        log_info_to_file ("checking for 1st run ..")
+        log_info_to_file ("Checking for 1st run ..")
         if (os.path.exists ("backup_task_queue")):
             # not 1st run 
             # check if the tasks are same as of now
-            log_info_to_file ("Not the 1st run ..!!\nReading tasks from the existing file ..")
+            log_info_to_file ("Not the 1st run ..!! Reading tasks from the existing file ..")
             l_tasks_read_from_file = get_list_of_tasks_in_namedtuple_format_from_file ("backup_task_queue")
 
             if (are_list_of_tasks_same (l_tasks, l_tasks_read_from_file)):
                 log_info_to_file ("All tasks from existing file matches with the current tasks to do. ")
                 # check for queue head
-                if (os.path.exists ("queue_head")):
+                if (os.path.exists ("backup_queue_head")):
                     # continue from where it had stopped
                     log_info_to_file ("queue_head file found..!!")
-                    current_queue_head = get_current_queue_head_in_namedtuple_format_from_file ("queue_head")
+                    current_queue_head = get_current_queue_head_in_namedtuple_format_from_file ("backup_queue_head")
 
                     state_of_queue_head = current_queue_head.state_of_queue_head
                     index_in_tasks_list = current_queue_head.queue_head_position
@@ -514,7 +526,7 @@ def main():
                     log_info_to_file ("Deleting existing backup_task_queue file.")
                     subprocess.call ("rm -f backup_task_queue", shell=True)
 
-                if (os.path.exists ("queue_head")):
+                if (os.path.exists ("backup_queue_head")):
                     log_info_to_file ("Deleting existing backup_queue_head file.")
                     subprocess.call ("rm -f backup_queue_head", shell=True)
     
@@ -524,6 +536,7 @@ def main():
                 execute_list_of_tasks (l_tasks, current_queue_head, config_parser)
         # if 1st run of the script
         else:
+            log_info_to_file ("It is 1st run ..!!")
             log_list_of_tasks_to_file (l_tasks)
             log_info_to_file ("Created backup_task_queue file.")
 
@@ -537,9 +550,7 @@ def main():
     except:
         exception_value = sys.exc_info()[1]
         log_main.critical (sys.exc_info())
-        print >> sys.stderr, "Exception occured.. please check the log file.."
+        print >> sys.stderr, "Exception occured. Please check the log file.."
         sys.exit (1)
-
-    log_info_to_file ("Backup successfully done..!! :-)")
 
 main()
