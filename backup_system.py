@@ -103,7 +103,7 @@ def are_config_values_correct (config_parser, path_to_file_containing_paths_to_b
 
 def get_command_to_make_tar (backup_path, path):
     dest = os.path.join (backup_path, os.path.basename(path))
-    return "tar -Pcpzfu " + dest + ".tar.gz " + path
+    return "tar -Pcpzf " + dest + ".tar.gz " + path
 
 def get_input_from_user_for_continuation ():
     log_info_to_file ("\n\n********************\n")
