@@ -349,7 +349,7 @@ def execute_list_of_tasks (l_tasks, current_queue_head, config_parser):
     
     len_l_tasks = len(l_tasks)
     i = queue_head_position
-    while (i < len_l_tasks)
+    while (i < len_l_tasks):
         current_task = l_tasks[i]
         task_try_number = l_tasks[i].try_number
         task_status = l_tasks[i].status
